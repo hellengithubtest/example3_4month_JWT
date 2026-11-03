@@ -2,6 +2,8 @@ package org.springsecurity.example.security.jwt;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.io.DecodingException;
 import io.jsonwebtoken.security.Keys;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,24 +11,45 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
 
 @Component
 public class JwtService {
-    @Value("${jwt.secret}")
-    private String secretKey;
+    private static final int MIN_SECRET_BYTES = 32;
+
+    private final SecretKey signingKey;
 
     @Getter
-    @Value("${jwt.access-token-expiration}")
-    private long accessExpirationMs;
+    private final long accessExpirationMs;
 
-    @Value("${jwt.refresh-token-expiration}")
-    private long refreshExpirationMs;
+    private final long refreshExpirationMs;
 
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
+    public JwtService(
+            @Value("${jwt.secret}") String encodedSecret,
+            @Value("${jwt.access-token-expiration}") long accessExpirationMs,
+            @Value("${jwt.refresh-token-expiration}") long refreshExpirationMs
+    ) {
+        this.signingKey = createSigningKey(encodedSecret);
+        this.accessExpirationMs = accessExpirationMs;
+        this.refreshExpirationMs = refreshExpirationMs;
+    }
+
+    private SecretKey createSigningKey(String encodedSecret) {
+        final byte[] secretBytes;
+        try {
+            secretBytes = Decoders.BASE64.decode(encodedSecret);
+        } catch (DecodingException | IllegalArgumentException exception) {
+            throw new IllegalStateException("JWT_SECRET must be a valid Base64 value", exception);
+        }
+
+        if (secretBytes.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "JWT_SECRET must contain at least 256 bits (32 bytes) of entropy"
+            );
+        }
+
+        return Keys.hmacShaKeyFor(secretBytes);
     }
 
     public String generateAccessToken(UserDetails userDetails) {
@@ -43,7 +66,7 @@ public class JwtService {
                 .subject(userDetails.getUsername())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(getSigningKey())
+                .signWith(signingKey)
                 .compact();
     }
 
@@ -62,7 +85,7 @@ public class JwtService {
 
     private Claims extractClaims(String token) {
         return Jwts.parser()
-                .verifyWith(getSigningKey())
+                .verifyWith(signingKey)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();

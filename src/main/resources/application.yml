@@ -6,7 +6,7 @@ spring:
   jpa:
     defer-datasource-initialization: true
 jwt:
-  secret: ${JWT_SECRET:k7f9x2pQ8vN3mR5wL0jY6tE1uA4sD8cG2hI9oP7qT3v=}
+  secret: ${JWT_SECRET}
   access-token-expiration: 900000   # 15 мин (мс)
   refresh-token-expiration: 604800000 # 7 дней (мс)
 springdoc:

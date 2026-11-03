@@ -8,9 +8,16 @@ access/refresh JWT и предметную авторизацию для упр�
 Требуется Java 21. Gradle Wrapper включён в проект, поэтому отдельно
 устанавливать Gradle не нужно.
 
+Сгенерировать 256-битный секрет и передать его приложению в Base64-виде:
+
 ```bash
+export JWT_SECRET="$(openssl rand -base64 32)"
 ./gradlew bootRun
 ```
+
+`JWT_SECRET` не хранится в Git и не имеет значения по умолчанию. Без него
+приложение не запустится. После перезапуска терминала секрет нужно задать
+заново. В production его следует получать из secret storage, а не из `.env` в Git.
 
 Приложение: <http://localhost:8090>. Swagger UI:
 <http://localhost:8090/swagger-ui/index.html>.
@@ -92,6 +99,11 @@ token заблокированной записи отклоняются.
 3. HTTP login для USER, READ и READ+BLOCK;
 4. наличие access/refresh token и время жизни access token;
 5. подпись, subject и сохранение refresh token в H2.
+6. `400 Bad Request` для невалидных login и refresh DTO.
+
+`JwtServiceConfigurationTest` проверяет Base64-формат и минимальную длину
+JWT-секрета. Интеграционные тесты генерируют свой случайный тестовый ключ и не
+зависят от production-секрета.
 
 `UserManagementIntegrationTest` проверяет прохождение JWT через фильтр и RBAC:
 
