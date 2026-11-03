@@ -10,7 +10,9 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springsecurity.example.dto.LoginRequest;
+import org.springsecurity.example.dto.RefreshRequest;
 import org.springsecurity.example.dto.TokenResponse;
 import org.springsecurity.example.enums.Role;
 import org.springsecurity.example.model.UserEntity;
@@ -23,6 +25,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -66,6 +69,34 @@ class LoginFlowIntegrationTest {
         assertSuccessfulLogin("user1", Set.of("ROLE_USER"));
         assertSuccessfulLogin("reader", Set.of("users:read"));
         assertSuccessfulLogin("moderator", Set.of("users:read", "users:block"));
+    }
+
+    @Test
+    void invalidLoginRequestReturnsBadRequest() throws Exception {
+        LoginRequest invalidRequest = new LoginRequest("ab", "short");
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isBadRequest())
+                .andExpect(result -> assertInstanceOf(
+                        MethodArgumentNotValidException.class,
+                        result.getResolvedException()
+                ));
+    }
+
+    @Test
+    void invalidRefreshRequestReturnsBadRequest() throws Exception {
+        RefreshRequest invalidRequest = new RefreshRequest("short");
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isBadRequest())
+                .andExpect(result -> assertInstanceOf(
+                        MethodArgumentNotValidException.class,
+                        result.getResolvedException()
+                ));
     }
 
     private void assertSeededUser(String username, Set<Role> expectedRoles) {

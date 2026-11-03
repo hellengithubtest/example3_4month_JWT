@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,7 +30,7 @@ public class AuthRestController {
             @ApiResponse(responseCode = "401", description = "Неверный логин или пароль"),
             @ApiResponse(responseCode = "400", description = "Ошибка валидации")
     })
-    public ResponseEntity<TokenResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
     }
 
@@ -40,7 +41,7 @@ public class AuthRestController {
             @ApiResponse(responseCode = "401", description = "Неверный логин или пароль"),
             @ApiResponse(responseCode = "400", description = "Ошибка валидации")
     })
-    public ResponseEntity<TokenResponse> refresh(@RequestBody RefreshRequest request) {
+    public ResponseEntity<TokenResponse> refresh(@Valid @RequestBody RefreshRequest request) {
         return ResponseEntity.ok(authService.refresh(request.refreshToken()));
     }
 }
