@@ -19,13 +19,11 @@ public class UsersDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // Замените UserEntity на вашу сущность пользователя
         UserEntity user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
-        // Маппим роли в GrantedAuthority (обязательно с префиксом ROLE_)
         var authorities = user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
+                .map(role -> new SimpleGrantedAuthority(role.getName().getAuthority()))
                 .collect(Collectors.toList());
 
         // Возвращаем стандартный Spring UserDetails
@@ -33,7 +31,7 @@ public class UsersDetailsService implements UserDetailsService {
                 user.getUsername(),
                 user.getPassword(),
                 user.isEnabled(),
-                true, true, true, // accountNonExpired, credentialsNonExpired, accountNonLocked
+                true, true, true,
                 authorities
         );
     }

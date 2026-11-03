@@ -15,7 +15,7 @@ public class RoleEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Храним БЕЗ префикса "ROLE_", например: "USER", "ADMIN", "MANAGER"
+    // READ и BLOCK преобразуются в предметные authorities users:read и users:block.
     @Column(unique = true, nullable = false, length = 50)
     @Enumerated(EnumType.STRING)
     private Role name;

@@ -57,14 +57,15 @@ class LoginFlowIntegrationTest {
     @Test
     void dataSqlCreatesKnownUsersWithRolesAndWorkingPassword() {
         assertSeededUser("user1", Set.of(Role.USER));
-        assertSeededUser("user2", Set.of(Role.USER));
-        assertSeededUser("admin", Set.of(Role.ADMIN));
+        assertSeededUser("reader", Set.of(Role.READ));
+        assertSeededUser("moderator", Set.of(Role.READ, Role.BLOCK));
     }
 
     @Test
-    void userAndAdminCanLoginAndReceiveValidTokens() throws Exception {
-        assertSuccessfulLogin("user1", "ROLE_USER");
-        assertSuccessfulLogin("admin", "ROLE_ADMIN");
+    void allUsersCanLoginAndReceiveValidTokensWithExpectedAuthorities() throws Exception {
+        assertSuccessfulLogin("user1", Set.of("ROLE_USER"));
+        assertSuccessfulLogin("reader", Set.of("users:read"));
+        assertSuccessfulLogin("moderator", Set.of("users:read", "users:block"));
     }
 
     private void assertSeededUser(String username, Set<Role> expectedRoles) {
@@ -78,7 +79,7 @@ class LoginFlowIntegrationTest {
         assertTrue(passwordEncoder.matches("password", user.getPassword()));
     }
 
-    private void assertSuccessfulLogin(String username, String expectedAuthority) throws Exception {
+    private void assertSuccessfulLogin(String username, Set<String> expectedAuthorities) throws Exception {
         LoginRequest loginRequest = new LoginRequest(username, "password");
 
         MvcResult result = mockMvc.perform(post("/api/auth/login")
@@ -102,7 +103,9 @@ class LoginFlowIntegrationTest {
         assertTrue(jwtService.isTokenValid(tokens.accessToken(), userDetails));
         assertTrue(jwtService.isTokenValid(tokens.refreshToken(), userDetails));
         assertTrue(refreshTokenRepository.findByToken(tokens.refreshToken()).isPresent());
-        assertTrue(userDetails.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals(expectedAuthority)));
+        Set<String> actualAuthorities = userDetails.getAuthorities().stream()
+                .map(authority -> authority.getAuthority())
+                .collect(Collectors.toSet());
+        assertEquals(expectedAuthorities, actualAuthorities);
     }
 }

@@ -1,7 +1,7 @@
 # Spring Security JWT demo
 
-Учебное stateless-приложение демонстрирует вход по логину и паролю и выпуск
-access/refresh JWT.
+Учебный stateless-микросервис демонстрирует вход по логину и паролю, выпуск
+access/refresh JWT и предметную авторизацию для управления пользователями.
 
 ## Запуск
 
@@ -21,15 +21,15 @@ access/refresh JWT.
 
 Данные предназначены только для локального учебного запуска:
 
-| Логин | Пароль | Роль |
-|---|---|---|
-| `user1` | `password` | USER |
-| `user2` | `password` | USER |
-| `admin` | `password` | ADMIN |
+| Логин | Пароль | Роли | Authorities |
+|---|---|---|---|
+| `user1` | `password` | USER | `ROLE_USER` |
+| `reader` | `password` | READ | `users:read` |
+| `moderator` | `password` | READ, BLOCK | `users:read`, `users:block` |
 
 В `data.sql` хранится BCrypt-хэш пароля. Таблицы `roles` и `user_roles`
-заполняются явно, поэтому Spring Security воспроизводимо загружает полномочия
-`ROLE_USER` и `ROLE_ADMIN`.
+заполняются явно. READ и BLOCK преобразуются в предметные полномочия
+`users:read` и `users:block`; глобальной роли ADMIN в сервисе нет.
 
 ## Проверка login через curl
 
@@ -40,7 +40,8 @@ curl -i \
   http://localhost:8090/api/auth/login
 ```
 
-Для ADMIN заменить `user1` на `admin`. Ожидается `HTTP 200` и JSON:
+Для проверки управления пользователями заменить `user1` на `reader` или
+`moderator`. Ожидается `HTTP 200` и JSON:
 
 ```json
 {
@@ -51,8 +52,32 @@ curl -i \
 }
 ```
 
-Access token действует 15 минут, refresh token — 7 дней. В Swagger UI access
-token вставляется через **Authorize** в формате `Bearer <token>`.
+Access token действует 15 минут, refresh token — 7 дней. В Swagger UI нужно
+нажать **Authorize** и вставить значение `accessToken`; Swagger добавит схему
+`Bearer` к HTTP-запросу.
+
+## Чтение и блокировка пользователей
+
+`GET /api/users` требует `users:read` и возвращает других пользователей без
+паролей и внутренних ролей:
+
+```bash
+curl -H "Authorization: Bearer <READER_ACCESS_TOKEN>" \
+  http://localhost:8090/api/users
+```
+
+`POST /api/users/{id}/block` требует `users:block`:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <MODERATOR_ACCESS_TOKEN>" \
+  http://localhost:8090/api/users/3001/block
+```
+
+READ позволяет только читать. BLOCK позволяет блокировать, а `moderator` имеет
+обе роли. Пользователь не может заблокировать самого себя. После блокировки
+поле `enabled` становится `false`. Новый login и запросы с ранее выданным access
+token заблокированной записи отклоняются.
 
 ## Автоматическая проверка
 
@@ -64,9 +89,18 @@ token вставляется через **Authorize** в формате `Bearer 
 
 1. пользователей и связи с ролями из `data.sql`;
 2. соответствие пароля `password` сохранённому BCrypt-хэшу;
-3. HTTP login для USER и ADMIN;
+3. HTTP login для USER, READ и READ+BLOCK;
 4. наличие access/refresh token и время жизни access token;
 5. подпись, subject и сохранение refresh token в H2.
+
+`UserManagementIntegrationTest` проверяет прохождение JWT через фильтр и RBAC:
+
+- USER не может читать других пользователей;
+- READ читает список, но получает `403` при блокировке;
+- READ+BLOCK читает и блокирует другого пользователя;
+- ответы не содержат паролей;
+- самого себя заблокировать нельзя;
+- заблокированная запись не может выполнить login или использовать старый access token.
 
 Собрать исполняемый Spring Boot JAR:
 
@@ -76,8 +110,9 @@ token вставляется через **Authorize** в формате `Bearer 
 
 ## Полный учебный сценарий
 
-1. Выполнить `POST /api/auth/login`.
-2. Скопировать `accessToken` и `refreshToken`.
-3. Использовать access token в заголовке `Authorization: Bearer <token>`.
-4. После истечения access token вызвать `POST /api/auth/refresh` с refresh token.
-5. Использовать новую пару токенов.
+1. Выполнить login как `reader` и получить access token.
+2. Вставить access token в Swagger и успешно вызвать `GET /api/users`.
+3. Убедиться, что `POST /api/users/{id}/block` возвращает `403`.
+4. Выполнить login как `moderator` и повторить оба запроса — оба должны быть успешны.
+5. Проверить, что заблокированный пользователь больше не может войти.
+6. После истечения access token вызвать `POST /api/auth/refresh` с refresh token.
