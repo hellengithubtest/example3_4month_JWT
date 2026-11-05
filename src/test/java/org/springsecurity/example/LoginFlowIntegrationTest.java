@@ -119,6 +119,38 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
     }
 
     @Test
+    void missingInvalidAuthenticationAndBadCredentialsReturnUnauthorizedJson() throws Exception {
+        mockMvc.perform(get("/api/users"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value("Authentication is required"))
+                .andExpect(jsonPath("$.path").value("/api/users"))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+
+        mockMvc.perform(get("/api/users")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer malformed.jwt.value"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value("Authentication is required"));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new LoginRequest("user1", "wrong-password")
+                        )))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value("Invalid username or password"))
+                .andExpect(jsonPath("$.path").value("/api/auth/login"));
+    }
+
+    @Test
     void accessAndRefreshTokensCannotBeUsedInterchangeably() throws Exception {
         TokenResponse tokens = login("reader");
         assertEquals(JwtTokenType.ACCESS, jwtService.extractTokenType(tokens.accessToken()));
@@ -126,14 +158,19 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
 
         mockMvc.perform(get("/api/users")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokens.refreshToken()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401));
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new RefreshRequest(tokens.accessToken())
-                        )))
-                .andExpect(status().isUnauthorized());
+                )))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.path").value("/api/auth/refresh"));
 
         MvcResult refreshResult = mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -210,7 +247,10 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
         TokenResponse secondSession = login("reader");
 
         mockMvc.perform(post("/api/auth/revoke-all"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("Authentication is required"));
 
         mockMvc.perform(post("/api/auth/revoke-all")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + firstSession.accessToken()))
@@ -302,8 +342,12 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new RefreshRequest(refreshToken)
-                        )))
-                .andExpect(status().isUnauthorized());
+                )))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.path").value("/api/auth/refresh"));
     }
 
     private int performRefreshAfter(CountDownLatch start, String requestBody) throws Exception {

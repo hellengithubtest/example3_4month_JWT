@@ -1,6 +1,8 @@
 package org.springsecurity.example.rest;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -25,12 +27,23 @@ public class UsersRestController {
 
     @GetMapping
     @Operation(summary = "Получить других пользователей", description = "Требуется authority users:read")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Список пользователей"),
+            @ApiResponse(responseCode = "401", description = "Access token отсутствует или невалиден"),
+            @ApiResponse(responseCode = "403", description = "Недостаточно прав: требуется users:read")
+    })
     public List<UserSummaryResponse> getOtherUsers(Authentication authentication) {
         return userManagementService.getOtherUsers(authentication.getName());
     }
 
     @PostMapping("/{id}/block")
     @Operation(summary = "Заблокировать пользователя", description = "Требуется authority users:block")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Пользователь заблокирован"),
+            @ApiResponse(responseCode = "400", description = "Нельзя заблокировать собственную учётную запись"),
+            @ApiResponse(responseCode = "401", description = "Access token отсутствует или невалиден"),
+            @ApiResponse(responseCode = "403", description = "Недостаточно прав: требуется users:block")
+    })
     public ResponseEntity<UserSummaryResponse> blockUser(
             @PathVariable("id") long userId,
             Authentication authentication

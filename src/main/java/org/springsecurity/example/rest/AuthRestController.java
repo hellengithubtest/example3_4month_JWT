@@ -61,7 +61,7 @@ public class AuthRestController {
     @Operation(summary = "Отозвать все refresh token", description = "Требует действующий access token")
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "Все refresh token пользователя отозваны"),
-            @ApiResponse(responseCode = "403", description = "Действующий access token отсутствует")
+            @ApiResponse(responseCode = "401", description = "Действующий access token отсутствует или невалиден")
     })
     public ResponseEntity<Void> revokeAll(Authentication authentication) {
         authService.revokeAll(authentication.getName());
