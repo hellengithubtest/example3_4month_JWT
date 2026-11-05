@@ -9,14 +9,16 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springsecurity.example.config.JwtProperties;
 import org.springsecurity.example.dto.LoginRequest;
 import org.springsecurity.example.dto.TokenResponse;
 import org.springsecurity.example.model.RefreshTokenEntity;
 import org.springsecurity.example.repository.RefreshTokenRepository;
 import org.springsecurity.example.security.jwt.JwtService;
+import org.springsecurity.example.security.jwt.RefreshTokenHasher;
 
-import java.time.Duration;
 import java.time.Instant;
 
 @Service
@@ -25,6 +27,8 @@ public class AuthService {
     private final AuthenticationManager authManager;
     private final UserDetailsService userDetailsService;
     private final JwtService jwtService;
+    private final JwtProperties jwtProperties;
+    private final RefreshTokenHasher refreshTokenHasher;
     private final RefreshTokenRepository refreshRepo;
 
     public TokenResponse login(LoginRequest req) {
@@ -39,6 +43,7 @@ public class AuthService {
         return new TokenResponse(accessToken, refreshToken, jwtService.getAccessExpirationMs());
     }
 
+    @Transactional
     public TokenResponse refresh(String refreshToken) {
         try {
             if (!jwtService.isRefreshToken(refreshToken)) {
@@ -48,14 +53,14 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
         }
 
-        RefreshTokenEntity stored = refreshRepo.findByToken(refreshToken)
+        String tokenHash = refreshTokenHasher.hash(refreshToken);
+        RefreshTokenEntity stored = refreshRepo.findByTokenHashForUpdate(tokenHash)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNAUTHORIZED,
                         "Invalid refresh token"
                 ));
 
-        if (stored.isRevoked() || jwtService.isTokenExpired(refreshToken)) {
-            refreshRepo.delete(stored);
+        if (stored.isRevoked() || !stored.getExpiryDate().isAfter(Instant.now())) {
             throw new ResponseStatusException(
                     HttpStatus.UNAUTHORIZED,
                     "Refresh token expired or revoked"
@@ -63,25 +68,40 @@ public class AuthService {
         }
 
         UserDetails user = userDetailsService.loadUserByUsername(stored.getUsername());
-        if (!jwtService.isRefreshTokenValid(refreshToken, user)) {
+        try {
+            if (!user.isEnabled() || !jwtService.isRefreshTokenValid(refreshToken, user)) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+            }
+        } catch (JwtException ignored) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
         }
 
         String newAccessToken = jwtService.generateAccessToken(user);
         String newRefreshToken = jwtService.generateRefreshToken(user);
 
-        // Ротация: удаляем старый, сохраняем новый
-        refreshRepo.delete(stored);
+        stored.setRevoked(true);
         saveRefreshToken(user.getUsername(), newRefreshToken);
 
         return new TokenResponse(newAccessToken, newRefreshToken, jwtService.getAccessExpirationMs());
     }
 
+    @Transactional
+    public void logout(String refreshToken) {
+        String tokenHash = refreshTokenHasher.hash(refreshToken);
+        refreshRepo.findByTokenHashForUpdate(tokenHash)
+                .ifPresent(stored -> stored.setRevoked(true));
+    }
+
+    @Transactional
+    public void revokeAll(String username) {
+        refreshRepo.revokeAllByUsername(username);
+    }
+
     private void saveRefreshToken(String username, String token) {
         RefreshTokenEntity entity = new RefreshTokenEntity();
         entity.setUsername(username);
-        entity.setToken(token);
-        entity.setExpiryDate(Instant.now().plus(Duration.ofDays(7)));
+        entity.setTokenHash(refreshTokenHasher.hash(token));
+        entity.setExpiryDate(Instant.now().plus(jwtProperties.refreshTokenExpiration()));
         refreshRepo.save(entity);
     }
 }

@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,13 +36,35 @@ public class AuthRestController {
     }
 
     @PostMapping("/refresh")
-    @Operation(summary = "Авторизация пользователя", description = "Возвращает пару Access + Refresh токенов")
+    @Operation(summary = "Обновление токенов", description = "Ротирует refresh token и возвращает новую пару токенов")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Успешный вход"),
-            @ApiResponse(responseCode = "401", description = "Неверный логин или пароль"),
+            @ApiResponse(responseCode = "200", description = "Токены успешно обновлены"),
+            @ApiResponse(responseCode = "401", description = "Refresh token невалиден, истёк или отозван"),
             @ApiResponse(responseCode = "400", description = "Ошибка валидации")
     })
     public ResponseEntity<TokenResponse> refresh(@Valid @RequestBody RefreshRequest request) {
         return ResponseEntity.ok(authService.refresh(request.refreshToken()));
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "Выход", description = "Отзывает переданный refresh token")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Refresh token отозван"),
+            @ApiResponse(responseCode = "400", description = "Ошибка валидации")
+    })
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
+        authService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/revoke-all")
+    @Operation(summary = "Отозвать все refresh token", description = "Требует действующий access token")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Все refresh token пользователя отозваны"),
+            @ApiResponse(responseCode = "403", description = "Действующий access token отсутствует")
+    })
+    public ResponseEntity<Void> revokeAll(Authentication authentication) {
+        authService.revokeAll(authentication.getName());
+        return ResponseEntity.noContent().build();
     }
 }

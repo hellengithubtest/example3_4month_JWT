@@ -19,6 +19,11 @@ export JWT_SECRET="$(openssl rand -base64 32)"
 приложение не запустится. После перезапуска терминала секрет нужно задать
 заново. В production его следует получать из secret storage, а не из `.env` в Git.
 
+Сроки жизни задаются в одном месте — в `application.yml`: параметр
+`jwt.access-token-expiration` равен `15m`, а `jwt.refresh-token-expiration` —
+`7d`. Последний используется и для claim `exp` refresh JWT, и для поля
+`expiryDate` в БД, поэтому сроки не расходятся.
+
 Приложение: <http://localhost:8090>. Swagger UI:
 <http://localhost:8090/swagger-ui/index.html>.
 
@@ -68,6 +73,49 @@ Access token действует 15 минут, refresh token — 7 дней. В 
 token не принимается как Bearer-токен защищённых endpoint'ов, а access token
 отклоняется endpoint'ом `/api/auth/refresh`.
 
+Исходный refresh token возвращается только клиенту. В H2 сохраняется его
+SHA-256-хэш, поэтому утечка таблицы не раскрывает готовые Bearer-токены.
+SHA-256 подходит здесь потому, что JWT имеет высокую энтропию и не является
+коротким пользовательским паролем.
+
+## Refresh, logout и отзыв всех сессий
+
+Получить новую пару токенов можно только по действующему refresh token:
+
+```bash
+curl -i \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<REFRESH_TOKEN>"}' \
+  http://localhost:8090/api/auth/refresh
+```
+
+Ротация выполняется в одной транзакции с pessimistic lock: старый refresh token
+помечается отозванным, а новый сохраняется атомарно. Если два запроса используют
+один token одновременно, успешным будет только один.
+
+Завершить одну сессию можно без access token, подтвердив владение её refresh
+token. Повторный logout идемпотентен:
+
+```bash
+curl -i -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<REFRESH_TOKEN>"}' \
+  http://localhost:8090/api/auth/logout
+```
+
+Отозвать refresh token всех сессий текущего пользователя можно только с
+действующим access token:
+
+```bash
+curl -i -X POST \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  http://localhost:8090/api/auth/revoke-all
+```
+
+Оба logout-endpoint'а возвращают `204 No Content`. Уже выданные access token
+остаются действительными до истечения их короткого срока; отзываются именно
+refresh token, чтобы новые access token больше нельзя было получить.
+
 ## Чтение и блокировка пользователей
 
 `GET /api/users` требует `users:read` и возвращает других пользователей без
@@ -103,10 +151,12 @@ token заблокированной записи отклоняются.
 2. соответствие пароля `password` сохранённому BCrypt-хэшу;
 3. HTTP login для USER, READ и READ+BLOCK;
 4. наличие access/refresh token и время жизни access token;
-5. подпись, subject, claim `token_type` и сохранение refresh token в H2;
+5. подпись, subject, claim `token_type` и сохранение только SHA-256-хэша refresh token в H2;
 6. запрет применения refresh token как access token и access token в `/refresh`;
-7. успешную ротацию корректного refresh token;
-8. `400 Bad Request` для невалидных login и refresh DTO.
+7. успешную и конкурентную атомарную ротацию refresh token;
+8. logout одной сессии и revoke-all для всех сессий пользователя;
+9. единый срок refresh token для JWT и записи БД;
+10. `400 Bad Request` для невалидных login и refresh DTO.
 
 `JwtServiceConfigurationTest` проверяет Base64-формат и минимальную длину
 JWT-секрета. Интеграционные тесты генерируют свой случайный тестовый ключ и не
@@ -135,3 +185,5 @@ JWT-секрета. Интеграционные тесты генерируют
 4. Выполнить login как `moderator` и повторить оба запроса — оба должны быть успешны.
 5. Проверить, что заблокированный пользователь больше не может войти.
 6. После истечения access token вызвать `POST /api/auth/refresh` с refresh token.
+7. Убедиться, что повторное применение старого refresh token возвращает `401`.
+8. Проверить `/api/auth/logout` для одной сессии и `/api/auth/revoke-all` для всех сессий пользователя.

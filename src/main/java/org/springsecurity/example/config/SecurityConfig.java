@@ -31,12 +31,18 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/auth/**",
+                                HttpMethod.POST,
+                                "/api/auth/login",
+                                "/api/auth/refresh",
+                                "/api/auth/logout"
+                        ).permitAll()
+                        .requestMatchers(
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html",
                                 "/webjars/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/revoke-all").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users").hasAuthority("users:read")
                         .requestMatchers(HttpMethod.POST, "/api/users/*/block").hasAuthority("users:block")
                         .anyRequest().authenticated()

@@ -5,12 +5,12 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.io.DecodingException;
 import io.jsonwebtoken.security.Keys;
-import lombok.Getter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
+import org.springsecurity.example.config.JwtProperties;
 
 import javax.crypto.SecretKey;
+import java.time.Duration;
 import java.util.Date;
 import java.util.UUID;
 
@@ -21,19 +21,13 @@ public class JwtService {
 
     private final SecretKey signingKey;
 
-    @Getter
-    private final long accessExpirationMs;
+    private final Duration accessExpiration;
+    private final Duration refreshExpiration;
 
-    private final long refreshExpirationMs;
-
-    public JwtService(
-            @Value("${jwt.secret}") String encodedSecret,
-            @Value("${jwt.access-token-expiration}") long accessExpirationMs,
-            @Value("${jwt.refresh-token-expiration}") long refreshExpirationMs
-    ) {
-        this.signingKey = createSigningKey(encodedSecret);
-        this.accessExpirationMs = accessExpirationMs;
-        this.refreshExpirationMs = refreshExpirationMs;
+    public JwtService(JwtProperties properties) {
+        this.signingKey = createSigningKey(properties.secret());
+        this.accessExpiration = properties.accessTokenExpiration();
+        this.refreshExpiration = properties.refreshTokenExpiration();
     }
 
     private SecretKey createSigningKey(String encodedSecret) {
@@ -54,20 +48,20 @@ public class JwtService {
     }
 
     public String generateAccessToken(UserDetails userDetails) {
-        return buildToken(userDetails, accessExpirationMs, JwtTokenType.ACCESS);
+        return buildToken(userDetails, accessExpiration, JwtTokenType.ACCESS);
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(userDetails, refreshExpirationMs, JwtTokenType.REFRESH);
+        return buildToken(userDetails, refreshExpiration, JwtTokenType.REFRESH);
     }
 
-    private String buildToken(UserDetails userDetails, long expirationMs, JwtTokenType tokenType) {
+    private String buildToken(UserDetails userDetails, Duration expiration, JwtTokenType tokenType) {
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(userDetails.getUsername())
                 .claim(TOKEN_TYPE_CLAIM, tokenType.getClaimValue())
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .expiration(new Date(System.currentTimeMillis() + expiration.toMillis()))
                 .signWith(signingKey)
                 .compact();
     }
@@ -107,6 +101,10 @@ public class JwtService {
 
     public boolean isTokenExpired(String token) {
         return extractClaims(token).getExpiration().before(new Date());
+    }
+
+    public long getAccessExpirationMs() {
+        return accessExpiration.toMillis();
     }
 
     private Claims extractClaims(String token) {

@@ -1,8 +1,10 @@
 package org.springsecurity.example;
 
 import org.junit.jupiter.api.Test;
+import org.springsecurity.example.config.JwtProperties;
 import org.springsecurity.example.security.jwt.JwtService;
 
+import java.time.Duration;
 import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -10,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class JwtServiceConfigurationTest {
 
-    private static final long ACCESS_EXPIRATION_MS = 900_000;
-    private static final long REFRESH_EXPIRATION_MS = 604_800_000;
+    private static final Duration ACCESS_EXPIRATION = Duration.ofMinutes(15);
+    private static final Duration REFRESH_EXPIRATION = Duration.ofDays(7);
 
     @Test
     void acceptsBase64SecretWithAtLeast256Bits() {
@@ -33,6 +35,10 @@ class JwtServiceConfigurationTest {
     }
 
     private JwtService createJwtService(String secret) {
-        return new JwtService(secret, ACCESS_EXPIRATION_MS, REFRESH_EXPIRATION_MS);
+        return new JwtService(new JwtProperties(
+                secret,
+                ACCESS_EXPIRATION,
+                REFRESH_EXPIRATION
+        ));
     }
 }
