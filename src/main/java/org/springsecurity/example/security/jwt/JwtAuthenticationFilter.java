@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,6 +20,7 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
@@ -45,10 +47,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (JwtException e) {
-            // Токен невалиден/просрочен → фильтрация продолжится, SecurityContext останется пустым
-            // В продакшене здесь можно бросить AuthException или вернуть 401 через ExceptionHandler
+        } catch (JwtException | IllegalArgumentException exception) {
+            log.warn(
+                    "JWT authentication rejected: category={}, method={}, path={}",
+                    JwtFailureCategory.from(exception),
+                    request.getMethod(),
+                    request.getRequestURI()
+            );
         }
         filterChain.doFilter(request, response);
     }
+
 }
