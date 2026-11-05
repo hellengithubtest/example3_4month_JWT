@@ -63,6 +63,11 @@ Access token действует 15 минут, refresh token — 7 дней. В 
 нажать **Authorize** и вставить значение `accessToken`; Swagger добавит схему
 `Bearer` к HTTP-запросу.
 
+Оба JWT содержат claim `token_type`: значение `access` используется для
+доступа к API, а `refresh` — только для получения новой пары токенов. Refresh
+token не принимается как Bearer-токен защищённых endpoint'ов, а access token
+отклоняется endpoint'ом `/api/auth/refresh`.
+
 ## Чтение и блокировка пользователей
 
 `GET /api/users` требует `users:read` и возвращает других пользователей без
@@ -98,8 +103,10 @@ token заблокированной записи отклоняются.
 2. соответствие пароля `password` сохранённому BCrypt-хэшу;
 3. HTTP login для USER, READ и READ+BLOCK;
 4. наличие access/refresh token и время жизни access token;
-5. подпись, subject и сохранение refresh token в H2.
-6. `400 Bad Request` для невалидных login и refresh DTO.
+5. подпись, subject, claim `token_type` и сохранение refresh token в H2;
+6. запрет применения refresh token как access token и access token в `/refresh`;
+7. успешную ротацию корректного refresh token;
+8. `400 Bad Request` для невалидных login и refresh DTO.
 
 `JwtServiceConfigurationTest` проверяет Base64-формат и минимальную длину
 JWT-секрета. Интеграционные тесты генерируют свой случайный тестовый ключ и не

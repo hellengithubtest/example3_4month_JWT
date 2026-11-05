@@ -1,12 +1,15 @@
 package org.springsecurity.example.service;
 
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springsecurity.example.dto.LoginRequest;
 import org.springsecurity.example.dto.TokenResponse;
 import org.springsecurity.example.model.RefreshTokenEntity;
@@ -37,15 +40,33 @@ public class AuthService {
     }
 
     public TokenResponse refresh(String refreshToken) {
+        try {
+            if (!jwtService.isRefreshToken(refreshToken)) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Expected refresh token");
+            }
+        } catch (JwtException ignored) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+        }
+
         RefreshTokenEntity stored = refreshRepo.findByToken(refreshToken)
-                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Invalid refresh token"
+                ));
 
         if (stored.isRevoked() || jwtService.isTokenExpired(refreshToken)) {
             refreshRepo.delete(stored);
-            throw new RuntimeException("Refresh token expired or revoked");
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Refresh token expired or revoked"
+            );
         }
 
         UserDetails user = userDetailsService.loadUserByUsername(stored.getUsername());
+        if (!jwtService.isRefreshTokenValid(refreshToken, user)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+        }
+
         String newAccessToken = jwtService.generateAccessToken(user);
         String newRefreshToken = jwtService.generateRefreshToken(user);
 
