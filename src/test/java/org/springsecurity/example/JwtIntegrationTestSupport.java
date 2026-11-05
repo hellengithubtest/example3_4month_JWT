@@ -15,6 +15,10 @@ abstract class JwtIntegrationTestSupport {
         registry.add("jwt.secret", () -> TEST_JWT_SECRET);
     }
 
+    protected static String testJwtSecret() {
+        return TEST_JWT_SECRET;
+    }
+
     private static String generateSecret() {
         byte[] secretBytes = new byte[32];
         new SecureRandom().nextBytes(secretBytes);

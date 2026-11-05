@@ -1,7 +1,11 @@
 package org.springsecurity.example;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,10 +26,13 @@ import org.springsecurity.example.model.UserEntity;
 import org.springsecurity.example.repository.RefreshTokenRepository;
 import org.springsecurity.example.repository.UsersRepository;
 import org.springsecurity.example.security.jwt.JwtService;
+import org.springsecurity.example.security.jwt.JwtAuthenticationFilter;
 import org.springsecurity.example.security.jwt.JwtTokenType;
 import org.springsecurity.example.security.jwt.RefreshTokenHasher;
+import org.springsecurity.example.service.AuthService;
 import org.springsecurity.example.service.UsersDetailsService;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -148,6 +155,74 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
                 .andExpect(jsonPath("$.error").value("Unauthorized"))
                 .andExpect(jsonPath("$.message").value("Invalid username or password"))
                 .andExpect(jsonPath("$.path").value("/api/auth/login"));
+    }
+
+    @Test
+    void jwtFailuresAreLoggedByCategoryWithoutTokenOrExceptionDetails() throws Exception {
+        String malformedToken = "malformed.jwt.value";
+        UserDetails reader = usersDetailsService.loadUserByUsername("reader");
+        JwtService shortLivedJwtService = new JwtService(new JwtProperties(
+                testJwtSecret(),
+                Duration.ofMillis(1),
+                Duration.ofDays(1)
+        ));
+        String expiredToken = shortLivedJwtService.generateAccessToken(reader);
+        Thread.sleep(20);
+
+        Logger filterLogger = (Logger) LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        filterLogger.addAppender(appender);
+
+        try {
+            assertUnauthorizedWithBearer(malformedToken);
+            assertUnauthorizedWithBearer(expiredToken);
+        } finally {
+            filterLogger.detachAppender(appender);
+            appender.stop();
+        }
+
+        List<ILoggingEvent> events = List.copyOf(appender.list);
+        assertTrue(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("category=MALFORMED")));
+        assertTrue(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("category=EXPIRED")));
+        assertTrue(events.stream().allMatch(event -> event.getThrowableProxy() == null));
+        assertFalse(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains(malformedToken) || message.contains(expiredToken)));
+    }
+
+    @Test
+    void invalidRefreshJwtIsLoggedByCategoryWithoutTokenOrExceptionDetails() throws Exception {
+        String invalidRefreshToken = "not-a-jwt-token-that-is-long-enough";
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(AuthService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        serviceLogger.addAppender(appender);
+
+        try {
+            mockMvc.perform(post("/api/auth/refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new RefreshRequest(invalidRefreshToken)
+                            )))
+                    .andExpect(status().isUnauthorized());
+        } finally {
+            serviceLogger.detachAppender(appender);
+            appender.stop();
+        }
+
+        List<ILoggingEvent> events = List.copyOf(appender.list);
+        assertTrue(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("category=MALFORMED")));
+        assertTrue(events.stream().allMatch(event -> event.getThrowableProxy() == null));
+        assertFalse(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains(invalidRefreshToken)));
     }
 
     @Test
@@ -358,5 +433,13 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
                 .andReturn()
                 .getResponse()
                 .getStatus();
+    }
+
+    private void assertUnauthorizedWithBearer(String token) throws Exception {
+        mockMvc.perform(get("/api/users")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401));
     }
 }

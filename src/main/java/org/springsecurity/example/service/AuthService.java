@@ -2,6 +2,7 @@ package org.springsecurity.example.service;
 
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -17,12 +18,14 @@ import org.springsecurity.example.dto.TokenResponse;
 import org.springsecurity.example.model.RefreshTokenEntity;
 import org.springsecurity.example.repository.RefreshTokenRepository;
 import org.springsecurity.example.security.jwt.JwtService;
+import org.springsecurity.example.security.jwt.JwtFailureCategory;
 import org.springsecurity.example.security.jwt.RefreshTokenHasher;
 
 import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
     private final AuthenticationManager authManager;
     private final UserDetailsService userDetailsService;
@@ -49,7 +52,8 @@ public class AuthService {
             if (!jwtService.isRefreshToken(refreshToken)) {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Expected refresh token");
             }
-        } catch (JwtException ignored) {
+        } catch (JwtException | IllegalArgumentException exception) {
+            logJwtRefreshFailure(exception);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
         }
 
@@ -72,7 +76,8 @@ public class AuthService {
             if (!user.isEnabled() || !jwtService.isRefreshTokenValid(refreshToken, user)) {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
             }
-        } catch (JwtException ignored) {
+        } catch (JwtException | IllegalArgumentException exception) {
+            logJwtRefreshFailure(exception);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
         }
 
@@ -95,6 +100,13 @@ public class AuthService {
     @Transactional
     public void revokeAll(String username) {
         refreshRepo.revokeAllByUsername(username);
+    }
+
+    private void logJwtRefreshFailure(RuntimeException exception) {
+        log.warn(
+                "JWT refresh rejected: category={}, operation=refresh",
+                JwtFailureCategory.from(exception)
+        );
     }
 
     private void saveRefreshToken(String username, String token) {

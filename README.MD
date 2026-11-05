@@ -162,6 +162,18 @@ token заблокированной записи отклоняются.
 Ответы не раскрывают, существует ли указанный логин, и не включают JWT или
 внутренний текст исключения.
 
+Сервер регистрирует отклонённые JWT на уровне `WARN`, но пишет только безопасную
+категорию причины, HTTP-метод и путь:
+
+```text
+JWT authentication rejected: category=EXPIRED, method=GET, path=/api/users
+JWT refresh rejected: category=MALFORMED, operation=refresh
+```
+
+Используются категории `EXPIRED`, `INVALID_SIGNATURE`, `MALFORMED`,
+`UNSUPPORTED`, `INVALID_FORMAT` и `INVALID`. Исходный Bearer-токен, сообщение
+исключения и stack trace в лог не передаются.
+
 ## Автоматическая проверка
 
 ```bash
@@ -180,7 +192,9 @@ token заблокированной записи отклоняются.
 8. logout одной сессии и revoke-all для всех сессий пользователя;
 9. единый срок refresh token для JWT и записи БД;
 10. `400 Bad Request` для невалидных login и refresh DTO;
-11. единый JSON и `401` для отсутствующей/невалидной аутентификации и неверного пароля.
+11. единый JSON и `401` для отсутствующей/невалидной аутентификации и неверного пароля;
+12. категории логирования для malformed и просроченного access JWT, а также
+    невалидного refresh JWT — без исходного токена и exception details.
 
 `JwtServiceConfigurationTest` проверяет Base64-формат и минимальную длину
 JWT-секрета. Интеграционные тесты генерируют свой случайный тестовый ключ и не
