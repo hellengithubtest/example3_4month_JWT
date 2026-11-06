@@ -1,0 +1,7 @@
+server:
+  forward-headers-strategy: framework
+
+app:
+  security:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS}

@@ -9,6 +9,19 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: 15m
   refresh-token-expiration: 7d
+app:
+  security:
+    cors:
+      allowed-origins:
+        - http://localhost:3000
+      allowed-methods:
+        - GET
+        - POST
+        - OPTIONS
+      allowed-headers:
+        - Authorization
+        - Content-Type
+      max-age: 1h
 springdoc:
   api-docs:
     path: /v3/api-docs

@@ -29,6 +29,53 @@ export JWT_SECRET="$(openssl rand -base64 32)"
 
 База H2 находится в памяти и заново заполняется из `data.sql` при каждом запуске.
 
+## CORS и production security headers
+
+Для локальной разработки разрешён только origin `http://localhost:3000`.
+CORS использует закрытые списки:
+
+- методы: `GET`, `POST`, `OPTIONS`;
+- request headers: `Authorization`, `Content-Type`;
+- credentials: отключены, потому что JWT передаётся в Bearer-заголовке;
+- preflight cache: 1 час.
+
+Wildcard `*` запрещён проверкой конфигурации. Неизвестный origin, метод или
+header получает `403 Invalid CORS request` без
+`Access-Control-Allow-Origin`.
+
+Production-профиль требует явно передать список origin без fallback:
+
+```bash
+export JWT_SECRET="$(openssl rand -base64 32)"
+export CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+SPRING_PROFILES_ACTIVE=prod ./gradlew bootRun
+```
+
+В production обычно TLS завершается на доверенном reverse proxy. Профиль `prod`
+включает `server.forward-headers-strategy=framework`, поэтому запрос с
+доверенным `X-Forwarded-Proto: https` считается secure. Proxy должен удалять
+внешние spoofed `Forwarded`/`X-Forwarded-*` и устанавливать собственные значения.
+
+Приложение возвращает следующие заголовки:
+
+| Заголовок | Значение |
+|---|---|
+| `Content-Security-Policy` | same-origin scripts/resources, запрет `object-src` и `frame-ancestors` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` только для HTTPS |
+
+HSTS намеренно не добавляется в HTTP-ответы. `includeSubDomains` и `preload`
+следует использовать только когда основной домен и все поддомены постоянно
+доступны по HTTPS. Проверка после production-развёртывания:
+
+```bash
+curl -I http://api.example.com/api/users
+curl -I https://api.example.com/api/users
+```
+
+В первом ответе `Strict-Transport-Security` отсутствует, во втором присутствует.
+
 ## Тестовые пользователи
 
 Данные предназначены только для локального учебного запуска:
@@ -209,6 +256,10 @@ JWT-секрета. Интеграционные тесты генерируют
 - ответы не содержат паролей;
 - самого себя заблокировать нельзя;
 - заблокированная запись не может выполнить login или использовать старый access token.
+
+`CorsAndSecurityHeadersIntegrationTest` проверяет разрешённый preflight,
+отклонение неизвестных origin/method/header, CSP, `nosniff`, frame deny и
+условный HSTS: заголовок отсутствует на HTTP и присутствует на HTTPS.
 
 Собрать исполняемый Spring Boot JAR:
 
