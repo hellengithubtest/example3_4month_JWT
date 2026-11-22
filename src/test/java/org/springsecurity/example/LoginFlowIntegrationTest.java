@@ -15,6 +15,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springsecurity.example.config.JwtProperties;
 import org.springsecurity.example.dto.LoginRequest;
@@ -193,6 +194,44 @@ class LoginFlowIntegrationTest extends JwtIntegrationTestSupport {
         assertFalse(events.stream()
                 .map(ILoggingEvent::getFormattedMessage)
                 .anyMatch(message -> message.contains(malformedToken) || message.contains(expiredToken)));
+    }
+
+    @Test
+    @Transactional
+    void validAccessTokenForDeletedUserReturnsUnauthorizedAndLogsSafeCategory() throws Exception {
+        UserDetails reader = usersDetailsService.loadUserByUsername("reader");
+        String accessToken = jwtService.generateAccessToken(reader);
+        UserEntity deletedUser = usersRepository.findByUsername("reader").orElseThrow();
+        usersRepository.delete(deletedUser);
+        usersRepository.flush();
+
+        Logger filterLogger = (Logger) LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        filterLogger.addAppender(appender);
+
+        try {
+            mockMvc.perform(get("/api/users")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.status").value(401))
+                    .andExpect(jsonPath("$.error").value("Unauthorized"))
+                    .andExpect(jsonPath("$.message").value("Authentication is required"))
+                    .andExpect(jsonPath("$.path").value("/api/users"));
+        } finally {
+            filterLogger.detachAppender(appender);
+            appender.stop();
+        }
+
+        List<ILoggingEvent> events = List.copyOf(appender.list);
+        assertTrue(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("category=SUBJECT_NOT_FOUND")));
+        assertTrue(events.stream().allMatch(event -> event.getThrowableProxy() == null));
+        assertFalse(events.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .anyMatch(message -> message.contains("reader") || message.contains(accessToken)));
     }
 
     @Test

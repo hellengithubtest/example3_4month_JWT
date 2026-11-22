@@ -4,12 +4,14 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.security.SignatureException;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 public enum JwtFailureCategory {
     EXPIRED,
     INVALID_SIGNATURE,
     MALFORMED,
     UNSUPPORTED,
+    SUBJECT_NOT_FOUND,
     INVALID_FORMAT,
     INVALID;
 
@@ -25,6 +27,9 @@ public enum JwtFailureCategory {
         }
         if (exception instanceof UnsupportedJwtException) {
             return UNSUPPORTED;
+        }
+        if (exception instanceof UsernameNotFoundException) {
+            return SUBJECT_NOT_FOUND;
         }
         if (exception instanceof IllegalArgumentException) {
             return INVALID_FORMAT;
